@@ -1,0 +1,16 @@
+databaseChangeLog:
+
+  - include:
+    - file: liquibase/changelogs/v1_0_0/schema.yml
+
+  - include:
+    - file: liquibase/changelogs/v1_1_0/schema.yml
+
+  - include:
+    - file: liquibase/changelogs/v1_2_0/schema.yml
+
+  - include:
+    - file: liquibase/changelogs/v1_3_0/schema.yml
+
+  - include:
+    - file: liquibase/changelogs/v1_4_0/schema.yml
