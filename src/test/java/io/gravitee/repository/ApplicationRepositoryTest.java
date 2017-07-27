@@ -112,6 +112,8 @@ public class ApplicationRepositoryTest extends AbstractRepositoryTest {
         Assert.assertEquals("Invalid updated application type.", application.getType(), appUpdated.getType());
         Assert.assertEquals("Invalid updated application status.", application.getStatus(), appUpdated.getStatus());
         Assert.assertEquals("Invalid updated application updateAt.", application.getUpdatedAt(), appUpdated.getUpdatedAt());
+        System.out.println("application.getCreatedAt(): " + application.getCreatedAt());
+        System.out.println("appUpdated.getCreatedAt(): " + appUpdated.getCreatedAt());
         Assert.assertEquals("Invalid updated application createdAt.", application.getCreatedAt(), appUpdated.getCreatedAt());
     }
 

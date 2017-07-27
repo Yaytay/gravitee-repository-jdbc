@@ -54,6 +54,8 @@ public class JdbcTestRepositoryInitializer implements TestRepositoryInitializer 
             "PlanApi",
             "PlanCharacteristic",
             "RateLimit",
+            "Role",
+            "RolePermission",
             "Subscription",
             "Tag",
             "Tenant",

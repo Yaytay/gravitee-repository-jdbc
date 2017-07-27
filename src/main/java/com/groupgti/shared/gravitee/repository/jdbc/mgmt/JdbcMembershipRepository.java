@@ -12,8 +12,8 @@ import java.sql.Types;
 import java.util.Date;
 import io.gravitee.repository.management.model.Membership;
 import io.gravitee.repository.management.model.MembershipReferenceType;
+import io.gravitee.repository.management.model.RoleScope;
 import java.sql.PreparedStatement;
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
@@ -42,7 +42,8 @@ public class JdbcMembershipRepository implements MembershipRepository {
                     + " `UserId` = ?"
                     + " , `ReferenceType` = ?"
                     + " , `ReferenceId` = ?"
-                    + " , `Type` = ?"
+                    + " , `RoleScope` = ?"
+                    + " , `RoleName` = ?"
                     + " , `CreatedAt` = ? "
                     + " , `UpdatedAt` = ? "
                     + " where "
@@ -53,7 +54,8 @@ public class JdbcMembershipRepository implements MembershipRepository {
             .addColumn("UserId", Types.NVARCHAR, String.class)
             .addColumn("ReferenceType", Types.NVARCHAR, MembershipReferenceType.class)
             .addColumn("ReferenceId", Types.NVARCHAR, String.class)
-            .addColumn("Type", Types.NVARCHAR, String.class)
+            .addColumn("RoleScope", Types.INTEGER, int.class)
+            .addColumn("RoleName", Types.NVARCHAR, String.class)
             .addColumn("CreatedAt", Types.TIMESTAMP, Date.class)
             .addColumn("UpdatedAt", Types.TIMESTAMP, Date.class)
             .build();    
@@ -117,7 +119,9 @@ public class JdbcMembershipRepository implements MembershipRepository {
         logger.debug("JdbcMembershipRepository.findById({}, {}, {})", userId, referenceType, referenceId);
         
         try {
-            List<Membership> items = jdbcTemplate.query("select * from Membership where UserId = ? and ReferenceType = ? and ReferenceId = ?"
+            List<Membership> items = jdbcTemplate.query("select "
+                    + " `UserId`, `ReferenceType`, `ReferenceId`, `RoleScope`, `RoleName`, `CreatedAt`, `UpdatedAt` "
+                    + " from Membership where UserId = ? and ReferenceType = ? and ReferenceId = ?"
                     , ORM.getRowMapper()
                     , userId
                     , referenceType.name()
@@ -132,44 +136,49 @@ public class JdbcMembershipRepository implements MembershipRepository {
     }
 
     @Override
-    public Set<Membership> findByReferenceAndMembershipType(MembershipReferenceType referenceType, String referenceId, String membershipType) throws TechnicalException {
-
-        logger.debug("JdbcMembershipRepository.findByReferenceAndMembershipType({}, {}, {})", referenceType, referenceId, membershipType);
-        
-        return findByReferencesAndMembershipType(referenceType, Arrays.asList(referenceId), membershipType);
-        
-    }
-
-    @Override
-    public Set<Membership> findByReferencesAndMembershipType(MembershipReferenceType referenceType, List<String> referenceIds, String membershipType) throws TechnicalException {
-
-        logger.debug("JdbcMembershipRepository.findByReferencesAndMembershipType({}, {}, {})", referenceType, referenceIds, membershipType);
+    public Set<Membership> findByReferenceAndRole(MembershipReferenceType referenceType, String referenceId, RoleScope roleScope, String roleName) throws TechnicalException {
+        logger.debug("JdbcMembershipRepository.findByReferenceAndRole({}, {}, {}, {})", referenceType, referenceId, roleScope, roleName);
         
         try {
-            StringBuilder query = new StringBuilder("select * from Membership ");
+            StringBuilder query = new StringBuilder("select "
+                    + " `UserId`, `ReferenceType`, `ReferenceId`, `RoleScope`, `RoleName`, `CreatedAt`, `UpdatedAt` "
+                    + " from Membership ");
             boolean first = true;
             if (referenceType != null) {
                 query.append(first ? " where " : " and ");
                 first = false;
                 query.append(" ReferenceType = ? ");                
             }
-            if (membershipType != null) {
+            if (referenceId != null) {
                 query.append(first ? " where " : " and ");
                 first = false;
-                query.append(" Type = ? ");                
+                query.append(" ReferenceId = ? ");                
             }
-            ORM.buildInCondition(first, query, "ReferenceId", referenceIds);
-            
+            if (roleScope != null) {
+                query.append(first ? " where " : " and ");
+                first = false;
+                query.append(" RoleScope = ? ");                
+            }
+            if (roleName != null) {
+                query.append(first ? " where " : " and ");
+                first = false;
+                query.append(" RoleName = ? ");                
+            }            
             List<Membership> items = jdbcTemplate.query(query.toString()
                     , (PreparedStatement ps) -> {
                         int idx = 1;
                         if (referenceType != null) {
                             ps.setString(idx++, referenceType.name());
                         }
-                        if (membershipType != null) {
-                            ps.setString(idx++, membershipType);
+                        if (referenceId != null) {
+                            ps.setString(idx++, referenceId);
                         }
-                        ORM.setArguments(ps, referenceIds, idx);
+                        if (roleScope != null) {
+                            ps.setInt(idx++, roleScope.getId());
+                        }
+                        if (roleName != null) {
+                            ps.setString(idx++, roleName);
+                        }
                     }, ORM.getRowMapper()
             );
             return new HashSet<>(items);
@@ -181,12 +190,184 @@ public class JdbcMembershipRepository implements MembershipRepository {
     }
 
     @Override
+    public Set<Membership> findByReferencesAndRole(MembershipReferenceType referenceType, List<String> referenceIds, RoleScope roleScope, String roleName) throws TechnicalException {
+        logger.debug("JdbcMembershipRepository.findByReferencesAndRole({}, {}, {}, {})", referenceType, referenceIds, roleScope, roleName);
+        
+        try {
+            StringBuilder query = new StringBuilder("select "
+                    + " `UserId`, `ReferenceType`, `ReferenceId`, `RoleScope`, `RoleName`, `CreatedAt`, `UpdatedAt` "
+                    + " from Membership ");
+            boolean first = true;
+            if (referenceType != null) {
+                query.append(first ? " where " : " and ");
+                first = false;
+                query.append(" ReferenceType = ? ");                
+            }
+            ORM.buildInCondition(first, query, "ReferenceId", referenceIds);
+            if (roleScope != null) {
+                query.append(first ? " where " : " and ");
+                first = false;
+                query.append(" RoleScope = ? ");                
+            }
+            if (roleName != null) {
+                query.append(first ? " where " : " and ");
+                first = false;
+                query.append(" RoleName = ? ");                
+            }            
+            List<Membership> items = jdbcTemplate.query(query.toString()
+                    , (PreparedStatement ps) -> {
+                        int idx = 1;
+                        if (referenceType != null) {
+                            ps.setString(idx++, referenceType.name());
+                        }
+                        idx = ORM.setArguments(ps, referenceIds, idx);
+                        if (roleScope != null) {
+                            ps.setInt(idx++, roleScope.getId());
+                        }
+                        if (roleName != null) {
+                            ps.setString(idx++, roleName);
+                        }
+                    }, ORM.getRowMapper()
+            );
+            return new HashSet<>(items);
+        } catch (Throwable ex) {
+            logger.error("Failed to find membership by references and membership type:", ex);
+            throw new TechnicalException("Failed to find membership by references and membership type", ex);
+        }
+        
+    }
+
+    @Override
+    public Set<Membership> findByUserAndReferenceTypeAndRole(String userId, MembershipReferenceType referenceType, RoleScope roleScope, String roleName) throws TechnicalException {
+        logger.debug("JdbcMembershipRepository.findByUserAndReferenceTypeAndRole({}, {}, {}, {})", userId, referenceType, roleScope, roleName);
+        
+        try {
+            StringBuilder query = new StringBuilder("select "
+                    + " `UserId`, `ReferenceType`, `ReferenceId`, `RoleScope`, `RoleName`, `CreatedAt`, `UpdatedAt` "
+                    + " from Membership ");
+            boolean first = true;
+            if (userId != null) {
+                query.append(first ? " where " : " and ");
+                first = false;
+                query.append(" UserId = ? ");                
+            }
+            if (referenceType != null) {
+                query.append(first ? " where " : " and ");
+                first = false;
+                query.append(" ReferenceType = ? ");                
+            }
+            if (roleScope != null) {
+                query.append(first ? " where " : " and ");
+                first = false;
+                query.append(" RoleScope = ? ");                
+            }
+            if (roleName != null) {
+                query.append(first ? " where " : " and ");
+                first = false;
+                query.append(" RoleName = ? ");                
+            }            
+            List<Membership> items = jdbcTemplate.query(query.toString()
+                    , (PreparedStatement ps) -> {
+                        int idx = 1;
+                        if (userId != null) {
+                            ps.setString(idx++, userId);
+                        }
+                        if (referenceType != null) {
+                            ps.setString(idx++, referenceType.name());
+                        }
+                        if (roleScope != null) {
+                            ps.setInt(idx++, roleScope.getId());
+                        }
+                        if (roleName != null) {
+                            ps.setString(idx++, roleName);
+                        }
+                    }, ORM.getRowMapper()
+            );
+            return new HashSet<>(items);
+        } catch (Throwable ex) {
+            logger.error("Failed to find membership by references and membership type:", ex);
+            throw new TechnicalException("Failed to find membership by references and membership type", ex);
+        }
+        
+    }
+
+//    
+//    @Override
+//    public Set<Membership> findByReferenceAndMembershipType(MembershipReferenceType referenceType, String referenceId, String membershipType) throws TechnicalException {
+//
+//        logger.debug("JdbcMembershipRepository.findByReferenceAndMembershipType({}, {}, {})", referenceType, referenceId, membershipType);
+//        
+//        return findByReferencesAndMembershipType(referenceType, Arrays.asList(referenceId), membershipType);
+//        
+//    }
+//
+//    @Override
+//    public Set<Membership> findByReferencesAndMembershipType(MembershipReferenceType referenceType, List<String> referenceIds, String membershipType) throws TechnicalException {
+//
+//        logger.debug("JdbcMembershipRepository.findByReferencesAndMembershipType({}, {}, {})", referenceType, referenceIds, membershipType);
+//        
+//        try {
+//            StringBuilder query = new StringBuilder("select * from Membership ");
+//            boolean first = true;
+//            if (referenceType != null) {
+//                query.append(first ? " where " : " and ");
+//                first = false;
+//                query.append(" ReferenceType = ? ");                
+//            }
+//            if (membershipType != null) {
+//                query.append(first ? " where " : " and ");
+//                first = false;
+//                query.append(" Type = ? ");                
+//            }
+//            ORM.buildInCondition(first, query, "ReferenceId", referenceIds);
+//            
+//            List<Membership> items = jdbcTemplate.query(query.toString()
+//                    , (PreparedStatement ps) -> {
+//                        int idx = 1;
+//                        if (referenceType != null) {
+//                            ps.setString(idx++, referenceType.name());
+//                        }
+//                        if (membershipType != null) {
+//                            ps.setString(idx++, membershipType);
+//                        }
+//                        ORM.setArguments(ps, referenceIds, idx);
+//                    }, ORM.getRowMapper()
+//            );
+//            return new HashSet<>(items);
+//        } catch (Throwable ex) {
+//            logger.error("Failed to find membership by references and membership type:", ex);
+//            throw new TechnicalException("Failed to find membership by references and membership type", ex);
+//        }
+//        
+//    }
+//
+//    @Override
+//    public Set<Membership> findByUserAndReferenceTypeAndMembershipType(String userId, MembershipReferenceType referenceType, String membershipType) throws TechnicalException {
+//
+//        logger.debug("JdbcMembershipRepository.findByUserAndReferenceTypeAndMembershipType({}, {}, {})", userId, referenceType);
+//        
+//        try {
+//            List<Membership> items = jdbcTemplate.query("select * from Membership where UserId = ? and ReferenceType = ? and Type = ? "
+//                    , ORM.getRowMapper()
+//                    , userId, referenceType.name(), membershipType
+//            );
+//            return new HashSet<>(items);
+//        } catch (Throwable ex) {
+//            logger.error("Failed to find membership by user and reference type and membership type:", ex);
+//            throw new TechnicalException("Failed to find membership by user and reference type and membership type", ex);
+//        }
+//        
+//    }
+
+    @Override
     public Set<Membership> findByUserAndReferenceType(String userId, MembershipReferenceType referenceType) throws TechnicalException {
 
         logger.debug("JdbcMembershipRepository.findByUserAndReferenceType({}, {}, {})", userId, referenceType);
         
         try {
-            List<Membership> items = jdbcTemplate.query("select * from Membership where UserId = ? and ReferenceType = ? "
+            List<Membership> items = jdbcTemplate.query("select "
+                    + " `UserId`, `ReferenceType`, `ReferenceId`, `RoleScope`, `RoleName`, `CreatedAt`, `UpdatedAt` "
+                    + " from Membership where UserId = ? and ReferenceType = ? "
                     , ORM.getRowMapper()
                     , userId, referenceType.name()
             );
@@ -197,23 +378,4 @@ public class JdbcMembershipRepository implements MembershipRepository {
         }
         
     }
-
-    @Override
-    public Set<Membership> findByUserAndReferenceTypeAndMembershipType(String userId, MembershipReferenceType referenceType, String membershipType) throws TechnicalException {
-
-        logger.debug("JdbcMembershipRepository.findByUserAndReferenceTypeAndMembershipType({}, {}, {})", userId, referenceType);
-        
-        try {
-            List<Membership> items = jdbcTemplate.query("select * from Membership where UserId = ? and ReferenceType = ? and Type = ? "
-                    , ORM.getRowMapper()
-                    , userId, referenceType.name(), membershipType
-            );
-            return new HashSet<>(items);
-        } catch (Throwable ex) {
-            logger.error("Failed to find membership by user and reference type and membership type:", ex);
-            throw new TechnicalException("Failed to find membership by user and reference type and membership type", ex);
-        }
-        
-    }
-
 }
