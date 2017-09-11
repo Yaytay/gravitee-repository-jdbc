@@ -115,6 +115,5 @@ public class ViewRepositoryTest extends AbstractRepositoryTest {
         viewRepository.update(view);
         
         fail("Should have thrown exception");
-
     }
 }

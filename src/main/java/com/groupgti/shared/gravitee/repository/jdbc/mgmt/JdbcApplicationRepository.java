@@ -8,6 +8,7 @@ package com.groupgti.shared.gravitee.repository.jdbc.mgmt;
 import com.groupgti.shared.gravitee.repository.jdbc.orm.JdbcObjectMapper;
 import io.gravitee.repository.exceptions.TechnicalException;
 import io.gravitee.repository.management.api.ApplicationRepository;
+import io.gravitee.repository.management.model.Api;
 import io.gravitee.repository.management.model.Application;
 import io.gravitee.repository.management.model.ApplicationStatus;
 import java.sql.PreparedStatement;
@@ -16,6 +17,7 @@ import java.util.Arrays;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import javax.sql.DataSource;
 import org.slf4j.Logger;
@@ -37,7 +39,6 @@ public class JdbcApplicationRepository extends JdbcAbstractCrudRepository<Applic
             .addColumn("Name", Types.NVARCHAR, String.class)
             .addColumn("Description", Types.NVARCHAR, String.class)
             .addColumn("Type", Types.NVARCHAR, String.class)
-            .addColumn("Group", Types.NVARCHAR, String.class)
             .addColumn("CreatedAt", Types.TIMESTAMP, Date.class)
             .addColumn("UpdatedAt", Types.TIMESTAMP, Date.class)
             .addColumn("Status", Types.NVARCHAR, ApplicationStatus.class)
@@ -56,6 +57,66 @@ public class JdbcApplicationRepository extends JdbcAbstractCrudRepository<Applic
     protected String getId(Application item) {
         return item.getId();
     }
+    
+    private void addGroups(Application parent) {        
+        List<String> groups = getGroups(parent.getId());
+        parent.setGroups(new HashSet<>(groups));
+    }
+    
+    private List<String> getGroups(String apiId) {
+        return jdbcTemplate.queryForList("select GroupId from ApplicationGroup where ApplicationId = ?", String.class, apiId);
+    }
+    
+    private void storeGroups(Application application, boolean deleteFirst) {
+        if (deleteFirst) {
+            jdbcTemplate.update("delete from ApplicationGroup where ApplicationId = ?", application.getId());
+        }
+        List<String> filteredGroups = ORM.filterStrings(application.getGroups());
+        if (! filteredGroups.isEmpty()) {
+            jdbcTemplate.batchUpdate("insert into ApplicationGroup ( ApplicationId, GroupId ) values ( ?, ? )"
+                    , ORM.getBatchStringSetter(application.getId(), filteredGroups));
+        }
+    }
+
+
+    @Override
+    public Application create(Application item) throws TechnicalException {
+        logger.debug("JdbcApplicationRepository.create({})", item);
+        try {
+            jdbcTemplate.update(ORM.buildInsertPreparedStatementCreator(item));
+            storeGroups(item, false);
+           return findById(item.getId()).get();
+        } catch (Throwable ex) {
+            logger.error("Failed to create application:", ex);
+            throw new TechnicalException("Failed to create application", ex);
+        }
+    }
+
+    @Override
+    public Application update(Application item) throws TechnicalException {
+        logger.debug("JdbcApplicationRepository.update({})", item);
+        try {
+            jdbcTemplate.update(ORM.buildUpdatePreparedStatementCreator(item, item.getId()));
+            storeGroups(item, true);
+            return findById(item.getId()).get();
+        } catch (Throwable ex) {
+            logger.error("Failed to update application:", ex);
+            throw new TechnicalException("Failed to update application", ex);
+        }
+    }
+
+    @Override
+    public Optional<Application> findById(String id) throws TechnicalException {
+        Optional<Application> result = super.findById(id);
+        
+        if (result.isPresent()) {
+            addGroups(result.get());
+        }
+        
+        return result;
+    }
+    
+    
 
     @Override
     public Set<Application> findByIds(List<String> ids) throws TechnicalException {
@@ -67,6 +128,9 @@ public class JdbcApplicationRepository extends JdbcAbstractCrudRepository<Applic
                     , (PreparedStatement ps) -> { ORM.setArguments(ps, ids, 1); }
                     , ORM.getRowMapper()
             );
+            for (Application application : applications) {
+                addGroups(application);
+            }
             return new HashSet<>(applications);
         } catch (Throwable ex) {
             logger.error("Failed to find applications by ids:", ex);
@@ -89,6 +153,9 @@ public class JdbcApplicationRepository extends JdbcAbstractCrudRepository<Applic
                     , (PreparedStatement ps) -> { ORM.setArguments(ps, statuses, 1); }
                     , ORM.getRowMapper()
             );
+            for (Application application : applications) {
+                addGroups(application);
+            }
             logger.debug("Found {} applications: {}", applications.size(), applications);
             return new HashSet<>(applications);
         } catch (Throwable ex) {
@@ -104,9 +171,9 @@ public class JdbcApplicationRepository extends JdbcAbstractCrudRepository<Applic
         try {
             List<ApplicationStatus> statuses = Arrays.asList(ass);
             
-            StringBuilder query = new StringBuilder("select * from Application ");
+            StringBuilder query = new StringBuilder("select distinct a.* from Application a join ApplicationGroup ag on ag.ApplicationId = a.Id ");
             boolean first = true;
-            first = ORM.buildInCondition(first, query, "Group", groupIds);
+            first = ORM.buildInCondition(first, query, "GroupId", groupIds);
             ORM.buildInCondition(first, query, "Status", statuses);
                 
             List<Application> applications = jdbcTemplate.query(query.toString()
@@ -116,6 +183,9 @@ public class JdbcApplicationRepository extends JdbcAbstractCrudRepository<Applic
                     }
                     , ORM.getRowMapper()
             );
+            for (Application application : applications) {
+                addGroups(application);
+            }
             return new HashSet<>(applications);
         } catch (Throwable ex) {
             logger.error("Failed to find applications by groups:", ex);
@@ -132,6 +202,9 @@ public class JdbcApplicationRepository extends JdbcAbstractCrudRepository<Applic
                     , ORM.getRowMapper()
                     , "%" + partialName + "%"
             );
+            for (Application application : applications) {
+                addGroups(application);
+            }
             return new HashSet<>(applications);
         } catch (Throwable ex) {
             logger.error("Failed to find applications by name:", ex);

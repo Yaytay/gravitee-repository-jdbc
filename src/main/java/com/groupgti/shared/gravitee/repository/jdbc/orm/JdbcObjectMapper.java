@@ -210,7 +210,7 @@ public class JdbcObjectMapper<T> {
         if ((args != null) && !args.isEmpty()) {
             query.append(first ? " where " : " and ");
             first = false;
-            query.append("`").append(column).append("` in ( ");
+            query.append("`").append(column.replaceAll("\\.", "`\\.`")).append("` in ( ");
             buildInClause(query, args);
             query.append(") ");
         }

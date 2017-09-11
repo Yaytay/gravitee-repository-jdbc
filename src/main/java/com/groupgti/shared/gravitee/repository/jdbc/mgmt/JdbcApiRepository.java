@@ -50,7 +50,7 @@ public class JdbcApiRepository implements ApiRepository {
             .addColumn("Visibility", Types.NVARCHAR, Visibility.class)
             .addColumn("LifecycleState", Types.NVARCHAR, LifecycleState.class)
             .addColumn("Picture", Types.NVARCHAR, String.class)
-            .addColumn("Group", Types.NVARCHAR, String.class)
+            // .addColumn("Group", Types.NVARCHAR, String.class)
             .build(); 
     
     private static final JdbcHelper.ChildAdder<Api> CHILD_ADDER = (Api parent, ResultSet rs) -> {
@@ -67,6 +67,11 @@ public class JdbcApiRepository implements ApiRepository {
     private void addLabels(Api parent) {        
         List<String> labels = getLabels(parent.getId());
         parent.setLabels(labels);
+    }
+    
+    private void addGroups(Api parent) {        
+        List<String> groups = getGroups(parent.getId());
+        parent.setGroups(new HashSet<>(groups));
     }
     
     @Autowired
@@ -89,6 +94,7 @@ public class JdbcApiRepository implements ApiRepository {
             Optional<Api> result = rowMapper.getRows().stream().findFirst();
             if (result.isPresent()) {
                 addLabels(result.get());
+                addGroups(result.get());
             }
             logger.debug("JdbcApiRepository.findById({}) = {}", id, result);
             return result;
@@ -105,6 +111,7 @@ public class JdbcApiRepository implements ApiRepository {
         try {
             jdbcTemplate.update(ORM.buildInsertPreparedStatementCreator(item));
             storeLabels(item, false);
+            storeGroups(item, false);
             storeViews(item, false);
             return findById(item.getId()).get();
         } catch (Throwable ex) {
@@ -119,6 +126,7 @@ public class JdbcApiRepository implements ApiRepository {
         try {
             jdbcTemplate.update(ORM.buildUpdatePreparedStatementCreator(item, item.getId()));
             storeLabels(item, true);
+            storeGroups(item, true);
             storeViews(item, true);
             return findById(item.getId()).get();
         } catch (Throwable ex) {
@@ -149,6 +157,21 @@ public class JdbcApiRepository implements ApiRepository {
         }
     }
     
+    private List<String> getGroups(String apiId) {
+        return jdbcTemplate.queryForList("select GroupId from ApiGroup where ApiId = ?", String.class, apiId);
+    }
+    
+    private void storeGroups(Api api, boolean deleteFirst) {
+        if (deleteFirst) {
+            jdbcTemplate.update("delete from ApiGroup where ApiId = ?", api.getId());
+        }
+        List<String> filteredGroups = ORM.filterStrings(api.getGroups());
+        if (! filteredGroups.isEmpty()) {
+            jdbcTemplate.batchUpdate("insert into ApiGroup ( ApiId, GroupId ) values ( ?, ? )"
+                    , ORM.getBatchStringSetter(api.getId(), filteredGroups));
+        }
+    }
+    
     private void storeViews(Api api, boolean deleteFirst) {
         if (deleteFirst) {
             jdbcTemplate.update("delete from ApiView where ApiId = ?", api.getId());
@@ -171,9 +194,10 @@ public class JdbcApiRepository implements ApiRepository {
                     , rowMapper
             );
             List<Api> apis = rowMapper.getRows();
-//            for (Api api : apis) {
-//                addLabels(api);
-//            }
+            for (Api api : apis) {
+                addLabels(api);
+                addGroups(api);
+            }
             return new HashSet<>(apis);
         } catch (Throwable ex) {
             logger.error("Failed to find all users:", ex);
@@ -193,9 +217,10 @@ public class JdbcApiRepository implements ApiRepository {
                     , visibility
             );
             List<Api> apis = rowMapper.getRows();
-//            for (Api api : apis) {
-//                addLabels(api);
-//            }
+            for (Api api : apis) {
+                addLabels(api);
+                addGroups(api);
+            }
             return new HashSet<>(apis);
         } catch (Throwable ex) {
             logger.error("Failed to find apis by visibility:", ex);
@@ -216,9 +241,10 @@ public class JdbcApiRepository implements ApiRepository {
                     , rowMapper
             );
             List<Api> apis = rowMapper.getRows();
-//            for (Api api : apis) {
-//                addLabels(api);
-//            }
+            for (Api api : apis) {
+                addLabels(api);
+                addGroups(api);
+            }
             return new HashSet<>(apis);
         } catch (Throwable ex) {
             logger.error("Failed to find api by ids:", ex);
@@ -239,9 +265,10 @@ public class JdbcApiRepository implements ApiRepository {
                     , rowMapper
             );
             List<Api> apis = rowMapper.getRows();
-//            for (Api api : apis) {
-//                addLabels(api);
-//            }
+            for (Api api : apis) {
+                addLabels(api);
+                addGroups(api);
+            }
             return new HashSet<>(apis);
         } catch (Throwable ex) {
             logger.error("Failed to find api by groups:", ex);

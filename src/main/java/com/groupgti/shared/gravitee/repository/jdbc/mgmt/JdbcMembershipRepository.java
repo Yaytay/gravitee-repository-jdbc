@@ -14,15 +14,22 @@ import io.gravitee.repository.management.model.Membership;
 import io.gravitee.repository.management.model.MembershipReferenceType;
 import io.gravitee.repository.management.model.RoleScope;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.stereotype.Repository;
 
 /**
@@ -42,8 +49,6 @@ public class JdbcMembershipRepository implements MembershipRepository {
                     + " `UserId` = ?"
                     + " , `ReferenceType` = ?"
                     + " , `ReferenceId` = ?"
-                    + " , `RoleScope` = ?"
-                    + " , `RoleName` = ?"
                     + " , `CreatedAt` = ? "
                     + " , `UpdatedAt` = ? "
                     + " where "
@@ -54,8 +59,6 @@ public class JdbcMembershipRepository implements MembershipRepository {
             .addColumn("UserId", Types.NVARCHAR, String.class)
             .addColumn("ReferenceType", Types.NVARCHAR, MembershipReferenceType.class)
             .addColumn("ReferenceId", Types.NVARCHAR, String.class)
-            .addColumn("RoleScope", Types.INTEGER, int.class)
-            .addColumn("RoleName", Types.NVARCHAR, String.class)
             .addColumn("CreatedAt", Types.TIMESTAMP, Date.class)
             .addColumn("UpdatedAt", Types.TIMESTAMP, Date.class)
             .build();    
@@ -72,6 +75,7 @@ public class JdbcMembershipRepository implements MembershipRepository {
         logger.debug("JdbcMembershipRepository.create({})", membership);
         try {
             jdbcTemplate.update(ORM.buildInsertPreparedStatementCreator(membership));
+            storeMembershipRoles(membership, false);
             return findById(membership.getUserId(), membership.getReferenceType(), membership.getReferenceId()).get();
         } catch (Throwable ex) {
             logger.error("Failed to create membership:", ex);
@@ -90,6 +94,7 @@ public class JdbcMembershipRepository implements MembershipRepository {
                     , membership.getReferenceType().name()
                     , membership.getReferenceId()
             ));
+            storeMembershipRoles(membership, true);
             return findById(membership.getUserId(), membership.getReferenceType(), membership.getReferenceId()).get();
         } catch (Throwable ex) {
             logger.error("Failed to update membership:", ex);
@@ -98,6 +103,50 @@ public class JdbcMembershipRepository implements MembershipRepository {
         
     }
 
+    private void addRoles(Membership parent) {        
+        Map<Integer, String> roles = getRoles(parent.getUserId(), parent.getReferenceId(), parent.getReferenceType());
+        parent.setRoles(roles);
+    }
+    
+    private Map<Integer, String> getRoles(String userId, String referenceId, MembershipReferenceType referenceType) {
+        Map<Integer, String> roles = new HashMap<>();
+        jdbcTemplate.query("select RoleScope, RoleName from MembershipRole where UserId = ? and ReferenceId = ? and ReferenceType = ?"
+                , new RowCallbackHandler() {
+            @Override
+            public void processRow(ResultSet rs) throws SQLException {
+                roles.put(rs.getInt(1), rs.getString(2));
+            }
+        }, userId, referenceId, referenceType.name());
+        return roles;
+    }
+    
+    private void storeMembershipRoles(Membership parent, boolean deleteFirst) {
+        if (deleteFirst) {
+            jdbcTemplate.update("delete from MembershipRole where UserId = ? and ReferenceId = ? and ReferenceType = ?"
+                    , parent.getUserId(), parent.getReferenceId(), parent.getReferenceType().name()
+            );
+        }
+        if (parent.getRoles() != null) {
+            List<Integer> scopes = new ArrayList<>(parent.getRoles().keySet());
+            jdbcTemplate.batchUpdate("insert into MembershipRole ( UserId, ReferenceId, ReferenceType, RoleScope, RoleName ) values ( ?, ?, ?, ?, ? )"
+                    , new BatchPreparedStatementSetter() {
+                @Override
+                public void setValues(PreparedStatement ps, int i) throws SQLException {
+                    ps.setString(1, parent.getUserId());
+                    ps.setString(2, parent.getReferenceId());
+                    ps.setString(3, parent.getReferenceType().name());
+                    ps.setInt(4, scopes.get(i));
+                    ps.setString(5, parent.getRoles().get(scopes.get(i)));
+                }
+
+                @Override
+                public int getBatchSize() {
+                    return scopes.size();
+                }
+            });
+        }
+    }
+            
     @Override
     public void delete(Membership membership) throws TechnicalException {
         logger.debug("JdbcMembershipRepository.delete({})", membership);
@@ -120,13 +169,16 @@ public class JdbcMembershipRepository implements MembershipRepository {
         
         try {
             List<Membership> items = jdbcTemplate.query("select "
-                    + " `UserId`, `ReferenceType`, `ReferenceId`, `RoleScope`, `RoleName`, `CreatedAt`, `UpdatedAt` "
+                    + " `UserId`, `ReferenceType`, `ReferenceId`, `CreatedAt`, `UpdatedAt` "
                     + " from Membership where UserId = ? and ReferenceType = ? and ReferenceId = ?"
                     , ORM.getRowMapper()
                     , userId
                     , referenceType.name()
                     , referenceId
             );
+            if (!items.isEmpty()) {
+                addRoles(items.get(0));
+            }
             return items.stream().findFirst();
         } catch (Throwable ex) {
             logger.error("Failed to find membership by id:", ex);
@@ -134,25 +186,58 @@ public class JdbcMembershipRepository implements MembershipRepository {
         }
         
     }
+    
+    @Override
+    public Set<Membership> findByIds(String userId, MembershipReferenceType referenceType, Set<String> referenceIds) throws TechnicalException {
+
+        logger.debug("JdbcMembershipRepository.findByIds({}, {}, {})", userId, referenceType, referenceIds);
+
+        StringBuilder query = new StringBuilder("select "
+                    + " `UserId`, `ReferenceType`, `ReferenceId`, `CreatedAt`, `UpdatedAt` "
+                    + " from Membership where UserId = ? and ReferenceType = ?");
+        ORM.buildInCondition(false, query, "ReferenceId", referenceIds);
+        
+        try {
+            List<Membership> items = jdbcTemplate.query(query.toString()
+                    , (PreparedStatement ps) -> {
+                        ps.setString(1, userId);
+                        ps.setString(2, referenceType.name());
+                        ORM.setArguments(ps, referenceIds, 3); 
+                    }
+                    , ORM.getRowMapper()
+            );
+            for (Membership membership : items) {
+                addRoles(membership);
+            }
+            return new HashSet<>(items);
+        } catch (Throwable ex) {
+            logger.error("Failed to find membership by id:", ex);
+            throw new TechnicalException("Failed to find membership by id", ex);
+        }
+        
+    }
+    
+    
 
     @Override
     public Set<Membership> findByReferenceAndRole(MembershipReferenceType referenceType, String referenceId, RoleScope roleScope, String roleName) throws TechnicalException {
         logger.debug("JdbcMembershipRepository.findByReferenceAndRole({}, {}, {}, {})", referenceType, referenceId, roleScope, roleName);
         
         try {
-            StringBuilder query = new StringBuilder("select "
-                    + " `UserId`, `ReferenceType`, `ReferenceId`, `RoleScope`, `RoleName`, `CreatedAt`, `UpdatedAt` "
-                    + " from Membership ");
+            StringBuilder query = new StringBuilder("select distinct "
+                    + " m.`UserId`, m.`ReferenceType`, m.`ReferenceId`, m.`CreatedAt`, m.`UpdatedAt` "
+                    + " from Membership m "
+                    + " left join MembershipRole mr on mr.UserID = m.UserID and mr.ReferenceType = m.ReferenceType and mr.ReferenceId = m.ReferenceId");
             boolean first = true;
             if (referenceType != null) {
                 query.append(first ? " where " : " and ");
                 first = false;
-                query.append(" ReferenceType = ? ");                
+                query.append(" m.ReferenceType = ? ");                
             }
             if (referenceId != null) {
                 query.append(first ? " where " : " and ");
                 first = false;
-                query.append(" ReferenceId = ? ");                
+                query.append(" m.ReferenceId = ? ");                
             }
             if (roleScope != null) {
                 query.append(first ? " where " : " and ");
@@ -181,6 +266,9 @@ public class JdbcMembershipRepository implements MembershipRepository {
                         }
                     }, ORM.getRowMapper()
             );
+            for (Membership membership : items) {
+                addRoles(membership);
+            }
             return new HashSet<>(items);
         } catch (Throwable ex) {
             logger.error("Failed to find membership by references and membership type:", ex);
@@ -194,16 +282,17 @@ public class JdbcMembershipRepository implements MembershipRepository {
         logger.debug("JdbcMembershipRepository.findByReferencesAndRole({}, {}, {}, {})", referenceType, referenceIds, roleScope, roleName);
         
         try {
-            StringBuilder query = new StringBuilder("select "
-                    + " `UserId`, `ReferenceType`, `ReferenceId`, `RoleScope`, `RoleName`, `CreatedAt`, `UpdatedAt` "
-                    + " from Membership ");
+            StringBuilder query = new StringBuilder("select distinct "
+                    + " m.`UserId`, m.`ReferenceType`, m.`ReferenceId`, m.`CreatedAt`, m.`UpdatedAt` "
+                    + " from Membership m "
+                    + " left join MembershipRole mr on mr.UserID = m.UserID and mr.ReferenceType = m.ReferenceType and mr.ReferenceId = m.ReferenceId");
             boolean first = true;
             if (referenceType != null) {
                 query.append(first ? " where " : " and ");
                 first = false;
-                query.append(" ReferenceType = ? ");                
+                query.append(" m.ReferenceType = ? ");                
             }
-            ORM.buildInCondition(first, query, "ReferenceId", referenceIds);
+            ORM.buildInCondition(first, query, "m.ReferenceId", referenceIds);
             if (roleScope != null) {
                 query.append(first ? " where " : " and ");
                 first = false;
@@ -229,6 +318,9 @@ public class JdbcMembershipRepository implements MembershipRepository {
                         }
                     }, ORM.getRowMapper()
             );
+            for (Membership membership : items) {
+                addRoles(membership);
+            }
             return new HashSet<>(items);
         } catch (Throwable ex) {
             logger.error("Failed to find membership by references and membership type:", ex);
@@ -242,19 +334,20 @@ public class JdbcMembershipRepository implements MembershipRepository {
         logger.debug("JdbcMembershipRepository.findByUserAndReferenceTypeAndRole({}, {}, {}, {})", userId, referenceType, roleScope, roleName);
         
         try {
-            StringBuilder query = new StringBuilder("select "
-                    + " `UserId`, `ReferenceType`, `ReferenceId`, `RoleScope`, `RoleName`, `CreatedAt`, `UpdatedAt` "
-                    + " from Membership ");
+            StringBuilder query = new StringBuilder("select distinct "
+                    + " m.`UserId`, m.`ReferenceType`, m.`ReferenceId`, m.`CreatedAt`, m.`UpdatedAt` "
+                    + " from Membership m "
+                    + " left join MembershipRole mr on mr.UserID = m.UserID and mr.ReferenceType = m.ReferenceType and mr.ReferenceId = m.ReferenceId");
             boolean first = true;
             if (userId != null) {
                 query.append(first ? " where " : " and ");
                 first = false;
-                query.append(" UserId = ? ");                
+                query.append(" m.UserId = ? ");                
             }
             if (referenceType != null) {
                 query.append(first ? " where " : " and ");
                 first = false;
-                query.append(" ReferenceType = ? ");                
+                query.append(" m.ReferenceType = ? ");                
             }
             if (roleScope != null) {
                 query.append(first ? " where " : " and ");
@@ -283,6 +376,9 @@ public class JdbcMembershipRepository implements MembershipRepository {
                         }
                     }, ORM.getRowMapper()
             );
+            for (Membership membership : items) {
+                addRoles(membership);
+            }
             return new HashSet<>(items);
         } catch (Throwable ex) {
             logger.error("Failed to find membership by references and membership type:", ex);
@@ -357,7 +453,7 @@ public class JdbcMembershipRepository implements MembershipRepository {
 //            throw new TechnicalException("Failed to find membership by user and reference type and membership type", ex);
 //        }
 //        
-//    }
+//    }    
 
     @Override
     public Set<Membership> findByUserAndReferenceType(String userId, MembershipReferenceType referenceType) throws TechnicalException {
@@ -366,7 +462,7 @@ public class JdbcMembershipRepository implements MembershipRepository {
         
         try {
             List<Membership> items = jdbcTemplate.query("select "
-                    + " `UserId`, `ReferenceType`, `ReferenceId`, `RoleScope`, `RoleName`, `CreatedAt`, `UpdatedAt` "
+                    + " `UserId`, `ReferenceType`, `ReferenceId`, `CreatedAt`, `UpdatedAt` "
                     + " from Membership where UserId = ? and ReferenceType = ? "
                     , ORM.getRowMapper()
                     , userId, referenceType.name()
@@ -376,6 +472,8 @@ public class JdbcMembershipRepository implements MembershipRepository {
             logger.error("Failed to find membership by user and membership type:", ex);
             throw new TechnicalException("Failed to find membership by user and membership type", ex);
         }
-        
+       
     }
+    
+    
 }
