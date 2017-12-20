@@ -14,6 +14,7 @@ import io.gravitee.repository.management.model.Metadata;
 import io.gravitee.repository.management.model.MetadataFormat;
 import io.gravitee.repository.management.model.MetadataReferenceType;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import javax.sql.DataSource;
 import org.slf4j.Logger;
@@ -84,6 +85,9 @@ public class JdbcMetadataRepository implements MetadataRepository {
     public Metadata update(Metadata metadata) throws TechnicalException {
         
         logger.debug("JdbcMetadataRepository.update({})", metadata);
+        if (metadata == null) {
+            throw new IllegalStateException("Failed to update null");
+        }
         try {
             jdbcTemplate.update(ORM.buildUpdatePreparedStatementCreator(metadata
                     , metadata.getKey()
@@ -91,6 +95,9 @@ public class JdbcMetadataRepository implements MetadataRepository {
                     , metadata.getReferenceId()
             ));
             return findById(metadata.getKey(), metadata.getReferenceId(), metadata.getReferenceType()).get();
+        } catch (NoSuchElementException ex) {
+            logger.error("Failed to update api:", ex);
+            throw new IllegalStateException("Failed to update api", ex);
         } catch (Throwable ex) {
             logger.error("Failed to update metadata:", ex);
             throw new TechnicalException("Failed to update metadata", ex);

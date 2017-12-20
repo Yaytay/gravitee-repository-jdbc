@@ -8,9 +8,12 @@ package com.groupgti.shared.gravitee.repository.jdbc.mgmt;
 import com.groupgti.shared.gravitee.repository.jdbc.orm.JdbcObjectMapper;
 import io.gravitee.repository.exceptions.TechnicalException;
 import io.gravitee.repository.management.api.ApiKeyRepository;
+import io.gravitee.repository.management.api.search.ApiKeyCriteria;
+import io.gravitee.repository.management.model.Api;
 import java.sql.Types;
 import java.util.Date;
 import io.gravitee.repository.management.model.ApiKey;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -57,21 +60,85 @@ public class JdbcApiKeyRepository extends JdbcAbstractCrudRepository<ApiKey, Str
     protected String getId(ApiKey item) {
         return item.getKey();
     }
+
+    @Override
+    public List<ApiKey> findByCriteria(ApiKeyCriteria akc) throws TechnicalException {
+
+        logger.debug("JdbcApiKeyRepository.findByCriteria({})", akc);
+
+        try {
+            List<Object> args = new ArrayList<>();
+            
+            StringBuilder query = new StringBuilder();
+            query.append("select * from ApiKey ");
+            boolean first = true;
+            if (!akc.isIncludeRevoked()) {
+                first = addClause(first, query);
+                query.append(" ( Revoked = 0 ) ");
+            }
+            if ((akc.getPlans() != null) && !akc.getPlans().isEmpty()) {
+                first = addClause(first, query);
+                query.append(" ( Plan in ( ");
+                boolean subFirst = true;
+                for (String plan : akc.getPlans()) {
+                    if (!subFirst) {
+                        query.append(", ");
+                    }
+                    subFirst = false;
+                    query.append(" ?");
+                    args.add(plan);
+                }
+                query.append(" ) ) ");
+            }
+            if (akc.getFrom() > 0) {
+                first = addClause(first, query);
+                query.append(" ( UpdatedAt >= ? ) ");
+                args.add(new Date(akc.getFrom()));
+            }
+            if (akc.getTo() > 0) {
+                first = addClause(first, query);
+                query.append(" ( UpdatedAt <= ? ) ");
+                args.add(new Date(akc.getTo()));
+            }
+            
+            
+            return jdbcTemplate.query(query.toString()
+                    , args.toArray()
+                    , ORM.getRowMapper()
+            );
+            
+        } catch (Throwable ex) {
+            logger.error("Failed to find api keys by criteria:", ex);
+            throw new TechnicalException("Failed to find api keys by criteria", ex);
+        }
+        
+    }
+
+    private boolean addClause(boolean first, StringBuilder query) {
+        if (first) {
+            query.append(" where ");
+        } else {
+            query.append(" and ");
+        }
+        return false;
+    }
     
     @Override
     public Set<ApiKey> findBySubscription(String subscription) throws TechnicalException {
 
         logger.debug("JdbcApiKeyRepository.findBySubscription({})", subscription);
+
         try {
-            List<ApiKey> items = jdbcTemplate.query("select * from ApiKey where Subscription = ?"
-                    , getOrm().getRowMapper()
+            List<ApiKey> apiKeys = jdbcTemplate.query("select * from ApiKey where Subscription = ?"
+                    , ORM.getRowMapper()
                     , subscription
             );
-            return new HashSet<>(items);
+            return new HashSet<>(apiKeys);
         } catch (Throwable ex) {
-            logger.error("Failed to find items by id:", ex);
-            throw new TechnicalException("Failed to find items by id", ex);
+            logger.error("Failed to find api keys by subscription:", ex);
+            throw new TechnicalException("Failed to find api keys by subscription", ex);
         }
+        
     }
 
     @Override
@@ -85,8 +152,8 @@ public class JdbcApiKeyRepository extends JdbcAbstractCrudRepository<ApiKey, Str
             );
             return new HashSet<>(items);
         } catch (Throwable ex) {
-            logger.error("Failed to find items by id:", ex);
-            throw new TechnicalException("Failed to find items by id", ex);
+            logger.error("Failed to find api keys by plan:", ex);
+            throw new TechnicalException("Failed to find api keys by plan", ex);
         }
 
     }

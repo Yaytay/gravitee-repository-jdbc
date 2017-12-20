@@ -26,6 +26,7 @@ import java.util.HashSet;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.Set;
 import javax.sql.DataSource;
@@ -103,11 +104,17 @@ public class JdbcUserRepository implements UserRepository {
     public User update(User user) throws TechnicalException {
         
         logger.debug("JdbcUserRepository.update({})", user);
+        if (user == null) {
+            throw new IllegalStateException("Failed to update null");
+        }
         try {
             jdbcTemplate.update(ORM.buildUpdatePreparedStatementCreator(user, user.getUsername()));
             jdbcTemplate.update("delete from UserRole where Username = ?", user.getUsername());
 //            insertUserRoles(user);
             return findByUsername(user.getUsername()).get();
+        } catch (NoSuchElementException ex) {
+            logger.error("Failed to update api:", ex);
+            throw new IllegalStateException("Failed to update api", ex);
         } catch (Throwable ex) {
             logger.error("Failed to update user:", ex);
             throw new TechnicalException("Failed to update user", ex);

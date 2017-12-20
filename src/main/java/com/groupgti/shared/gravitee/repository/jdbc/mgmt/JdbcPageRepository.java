@@ -18,12 +18,16 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
+import java.util.NoSuchElementException;
 import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.PreparedStatementCreator;
 import org.springframework.jdbc.core.RowMapper;
@@ -57,7 +61,7 @@ public class JdbcPageRepository extends JdbcAbstractCrudRepository<Page, String>
             .addColumn("UpdatedAt", Types.TIMESTAMP, Date.class)
             .build();    
     
-    private static class Rm implements RowMapper<Page> {
+    private class Rm implements RowMapper<Page> {
         
         @Override
         public Page mapRow(ResultSet rs, int i) throws SQLException {
@@ -75,11 +79,12 @@ public class JdbcPageRepository extends JdbcAbstractCrudRepository<Page, String>
             pageConfiguration.setTryIt(rs.getBoolean("ConfigurationTryIt"));
             pageConfiguration.setTryItURL(rs.getString("ConfigurationTryItURL"));
             page.setConfiguration(pageConfiguration);
+            addExcludedGroups(page);
             return page;
         }
     };
     
-    private static final Rm MAPPER = new Rm();
+    private final Rm MAPPER = new Rm();
     
     private static class Psc implements PreparedStatementCreator {
 
@@ -203,6 +208,73 @@ public class JdbcPageRepository extends JdbcAbstractCrudRepository<Page, String>
     protected PreparedStatementCreator buildInsertPreparedStatementCreator(Page page) {
         return new Psc(INSERT_SQL, page);
     }
+    
+    private void addExcludedGroups(Page parent) {        
+        List<String> excludedGroups = getExcludedGroups(parent.getId());
+        parent.setExcludedGroups(excludedGroups);
+    }
+        
+    private List<String> getExcludedGroups(String pageId) {
+        List<String> excludedGroups = jdbcTemplate.query("select ExcludedGroup from PageExcludedGroup where PageId = ?"
+                , (ResultSet rs, int rowNum) -> rs.getString(1)
+                , pageId);
+        return excludedGroups;
+    }
+    
+    private void storeExcludedGroups(Page page, boolean deleteFirst) {
+        if (deleteFirst) {
+            jdbcTemplate.update("delete from PageExcludedGroup where PageId = ?", page.getId());
+        }
+        if ((page.getExcludedGroups() != null) && !page.getExcludedGroups().isEmpty()) {
+            List<String> excludedGroups = page.getExcludedGroups();
+            jdbcTemplate.batchUpdate("insert into PageExcludedGroup ( PageId, ExcludedGroup ) values ( ?, ? )"
+                    , new BatchPreparedStatementSetter() {
+                @Override
+                public void setValues(PreparedStatement ps, int i) throws SQLException {
+                    ps.setString(1, page.getId());
+                    ps.setString(2, excludedGroups.get(i));
+                }
+
+                @Override
+                public int getBatchSize() {
+                    return excludedGroups.size();
+                }
+            });
+        }
+    }
+
+
+    @Override
+    public Page create(Page item) throws TechnicalException {
+        logger.debug("JdbcPageRepository.create({})", item);
+        try {
+            jdbcTemplate.update(buildInsertPreparedStatementCreator(item));
+            storeExcludedGroups(item, false);
+            return findById(item.getId()).get();
+        } catch (Throwable ex) {
+            logger.error("Failed to create page:", ex);
+            throw new TechnicalException("Failed to create page", ex);
+        }
+    }
+
+    @Override
+    public Page update(Page item) throws TechnicalException {
+        logger.debug("JdbcPageRepository.update({})", item);
+        if (item == null) {
+            throw new IllegalStateException("Failed to update null");
+        }
+        try {
+            jdbcTemplate.update(buildUpdatePreparedStatementCreator(item));
+            storeExcludedGroups(item, true);
+            return findById(item.getId()).get();
+        } catch (NoSuchElementException ex) {
+            logger.error("Failed to update api:", ex);
+            throw new IllegalStateException("Failed to update api", ex);
+        } catch (Throwable ex) {
+            logger.error("Failed to update page:", ex);
+            throw new TechnicalException("Failed to update page", ex);
+        }
+    }
 
     @Override
     public Collection<Page> findApiPageByApiIdAndHomepage(String apiId, boolean homePage) throws TechnicalException {
@@ -213,6 +285,9 @@ public class JdbcPageRepository extends JdbcAbstractCrudRepository<Page, String>
                     , getRowMapper()
                     , apiId, homePage
             );
+            for (Page page : items) {
+                addExcludedGroups(page);
+            }
             return items;
         } catch (Throwable ex) {
             logger.error("Failed to find page by api and homepage:", ex);
@@ -230,6 +305,9 @@ public class JdbcPageRepository extends JdbcAbstractCrudRepository<Page, String>
                     , getRowMapper()
                     , apiId
             );
+            for (Page page : items) {
+                addExcludedGroups(page);
+            }
             return items;
         } catch (Throwable ex) {
             logger.error("Failed to find page by api:", ex);
@@ -267,6 +345,9 @@ public class JdbcPageRepository extends JdbcAbstractCrudRepository<Page, String>
                     , getRowMapper()
                     , homePage
             );
+            for (Page page : items) {
+                addExcludedGroups(page);
+            }
             return items;
         } catch (Throwable ex) {
             logger.error("Failed to find page by api:", ex);
@@ -284,6 +365,9 @@ public class JdbcPageRepository extends JdbcAbstractCrudRepository<Page, String>
             List<Page> items = jdbcTemplate.query("select * from Page where Api is null order by `Order`"
                     , getRowMapper()
             );
+            for (Page page : items) {
+                addExcludedGroups(page);
+            }
             return items;
         } catch (Throwable ex) {
             logger.error("Failed to find page by api:", ex);

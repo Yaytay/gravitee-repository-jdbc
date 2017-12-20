@@ -5,8 +5,12 @@
  */
 package com.groupgti.shared.gravitee.repository.jdbc.orm;
 
+import java.io.Reader;
+import static java.lang.System.in;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
+import java.nio.CharBuffer;
+import java.sql.Clob;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -255,6 +259,17 @@ public class JdbcObjectMapper<T> {
             try {
                 if (!rs.wasNull()) {
                     
+                    if (value instanceof Clob) {
+                        Clob clob = (Clob) value;
+                        Reader reader = clob.getCharacterStream();
+                        char buf[] = new char[128];
+                        int chars = 0;
+                        StringBuilder rslt = new StringBuilder();
+                        while ((chars = reader.read(buf)) >= 0) {
+                            rslt.append(buf, 0, chars);
+                        }
+                        value = rslt.toString();
+                    }
                     if (column.javaType.isEnum() && (value instanceof String)) {
                         String stringValue = (String) value;
                         value = Enum.valueOf(column.javaType, stringValue);

@@ -17,6 +17,7 @@ import java.sql.Types;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.Set;
 import javax.sql.DataSource;
@@ -123,12 +124,18 @@ public class JdbcApiRepository implements ApiRepository {
     @Override
     public Api update(Api item) throws TechnicalException {
         logger.debug("JdbcApiRepository.update({})", item);
+        if (item == null) {
+            throw new IllegalStateException("Failed to update null");
+        }
         try {
             jdbcTemplate.update(ORM.buildUpdatePreparedStatementCreator(item, item.getId()));
             storeLabels(item, true);
             storeGroups(item, true);
             storeViews(item, true);
             return findById(item.getId()).get();
+        } catch (NoSuchElementException ex) {
+            logger.error("Failed to update api:", ex);
+            throw new IllegalStateException("Failed to update api", ex);
         } catch (Throwable ex) {
             logger.error("Failed to update api:", ex);
             throw new TechnicalException("Failed to update api", ex);

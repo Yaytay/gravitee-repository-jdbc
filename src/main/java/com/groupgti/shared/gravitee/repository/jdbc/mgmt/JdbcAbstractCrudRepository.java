@@ -100,17 +100,17 @@ public abstract class JdbcAbstractCrudRepository<T, ID> {
         logger.debug("JdbcAbstractCrudRepository<{}>.update({})", tableName, item);
         
         if (item == null) {
-            throw new IllegalArgumentException("Unable to update null item");
+            throw new IllegalStateException("Unable to update null item");
         }
         
         try {
             int rows = jdbcTemplate.update(buildUpdatePreparedStatementCreator(item));
             if (rows == 0) {
-                throw new IllegalArgumentException("Unable to update " + item.getClass().getSimpleName() + " " + getId(item));
+                throw new IllegalStateException("Unable to update " + item.getClass().getSimpleName() + " " + getId(item));
             } else {
                 return findById(getId(item)).get();
             }
-        } catch (IllegalArgumentException ex) {
+        } catch (IllegalStateException ex) {
             throw ex;
         } catch (Throwable ex) {
             logger.error("Failed to update {} item:", tableName, ex);

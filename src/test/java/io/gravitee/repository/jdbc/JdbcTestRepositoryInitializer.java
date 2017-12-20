@@ -5,7 +5,6 @@
  */
 package io.gravitee.repository.jdbc;
 
-import io.gravitee.repository.config.PropertySourceRepositoryInitializer;
 import io.gravitee.repository.config.TestRepositoryInitializer;
 import java.sql.Connection;
 import java.util.ArrayList;
@@ -44,7 +43,8 @@ public class JdbcTestRepositoryInitializer implements TestRepositoryInitializer 
             "ApiView",
             "Application",
             "ApplicationGroup",
-            "ClientMessageLog",
+            "Audit",
+            "AuditProperty",
             "Event",
             "EventProperty",
             "Group",
@@ -54,10 +54,14 @@ public class JdbcTestRepositoryInitializer implements TestRepositoryInitializer 
             "MembershipRole",
             "Metadata",
             "Page",
+            "PageExcludedGroup",
             "Plan",
             "PlanApi",
             "PlanCharacteristic",
+            "PlanExcludedGroup",
             "RateLimit",
+            "Rating",
+            "RatingAnswer",
             "Role",
             "RolePermission",
             "Subscription",
@@ -70,6 +74,7 @@ public class JdbcTestRepositoryInitializer implements TestRepositoryInitializer 
     
     private static final List<String> tablesToDrop = concatenate(tablesToTruncate
             , Arrays.asList(
+            "ClientMessageLog",
             "DATABASECHANGELOG",
             "DATABASECHANGELOGLOCK"
     ));
@@ -126,9 +131,14 @@ public class JdbcTestRepositoryInitializer implements TestRepositoryInitializer 
         logger.debug("tearDown");
         
         JdbcTemplate jt = new JdbcTemplate(dataSource);
-        for (String table : tablesToTruncate) {
-            jt.execute("delete from `" + table + '`');
-        }
+        jt.execute((Connection con) -> {
+            con.nativeSQL("SET REFERENTIAL_INTEGRITY FALSE");
+            for (String table : tablesToTruncate) {
+                jt.execute("truncate table `" + table + '`');
+            }
+            con.nativeSQL("SET REFERENTIAL_INTEGRITY TRUE");
+            return null;
+        });
     }
 
 }

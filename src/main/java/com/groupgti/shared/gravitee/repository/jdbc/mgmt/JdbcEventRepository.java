@@ -26,6 +26,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import javax.sql.DataSource;
 import org.slf4j.Logger;
@@ -130,12 +131,17 @@ public class JdbcEventRepository implements EventRepository {
 
     @Override
     public Event update(Event event) throws TechnicalException {
-        
         logger.debug("JdbcEventRepository.update({})", event);
+        if (event == null) {
+            throw new IllegalStateException("Failed to update null");
+        }
         try {
             jdbcTemplate.update(ORM.buildUpdatePreparedStatementCreator(event, event.getId()));
             storeProperties(event, true);
             return findById(event.getId()).get();
+        } catch (NoSuchElementException ex) {
+            logger.error("Failed to update api:", ex);
+            throw new IllegalStateException("Failed to update api", ex);
         } catch (Throwable ex) {
             logger.error("Failed to update event:", ex);
             throw new TechnicalException("Failed to update event", ex);
@@ -179,7 +185,7 @@ public class JdbcEventRepository implements EventRepository {
             }
 
             if (rows > 0) {
-                return new Page(events.subList(start, start + rows), start / rows, rows, events.size());
+                return new Page(events.subList(start, start + rows), start / page.pageSize(), rows, events.size());
             } else {
                 return new Page(Collections.EMPTY_LIST, 0, 0, events.size());
             }

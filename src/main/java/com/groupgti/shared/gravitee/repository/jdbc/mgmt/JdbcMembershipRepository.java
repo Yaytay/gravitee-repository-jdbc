@@ -21,6 +21,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.Set;
 import javax.sql.DataSource;
@@ -88,6 +89,9 @@ public class JdbcMembershipRepository implements MembershipRepository {
     public Membership update(Membership membership) throws TechnicalException {
         
         logger.debug("JdbcMembershipRepository.update({})", membership);
+        if (membership == null) {
+            throw new IllegalStateException("Failed to update null");
+        }
         try {
             jdbcTemplate.update(ORM.buildUpdatePreparedStatementCreator(membership
                     , membership.getUserId()
@@ -96,6 +100,9 @@ public class JdbcMembershipRepository implements MembershipRepository {
             ));
             storeMembershipRoles(membership, true);
             return findById(membership.getUserId(), membership.getReferenceType(), membership.getReferenceId()).get();
+        } catch (NoSuchElementException ex) {
+            logger.error("Failed to update api:", ex);
+            throw new IllegalStateException("Failed to update api", ex);
         } catch (Throwable ex) {
             logger.error("Failed to update membership:", ex);
             throw new TechnicalException("Failed to update membership", ex);

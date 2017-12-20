@@ -17,6 +17,7 @@ import java.util.Arrays;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.Set;
 import javax.sql.DataSource;
@@ -95,10 +96,16 @@ public class JdbcApplicationRepository extends JdbcAbstractCrudRepository<Applic
     @Override
     public Application update(Application item) throws TechnicalException {
         logger.debug("JdbcApplicationRepository.update({})", item);
+        if (item == null) {
+            throw new IllegalStateException("Failed to update null");
+        }
         try {
             jdbcTemplate.update(ORM.buildUpdatePreparedStatementCreator(item, item.getId()));
             storeGroups(item, true);
             return findById(item.getId()).get();
+        } catch (NoSuchElementException ex) {
+            logger.error("Failed to update api:", ex);
+            throw new IllegalStateException("Failed to update api", ex);
         } catch (Throwable ex) {
             logger.error("Failed to update application:", ex);
             throw new TechnicalException("Failed to update application", ex);

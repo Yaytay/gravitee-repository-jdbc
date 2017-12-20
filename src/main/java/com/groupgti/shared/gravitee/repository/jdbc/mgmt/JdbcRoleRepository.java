@@ -17,6 +17,7 @@ import java.sql.Types;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.HashSet;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.Set;
 import javax.sql.DataSource;
@@ -86,7 +87,7 @@ public class JdbcRoleRepository implements RoleRepository {
     public Role update(Role item) throws TechnicalException {
         logger.debug("JdbcRoleRepository.update({})", item);
         if (item == null) {
-            throw new NullPointerException();
+            throw new IllegalStateException();
         }
         try {
             jdbcTemplate.update("update Role set "
@@ -100,18 +101,21 @@ public class JdbcRoleRepository implements RoleRepository {
                     + " where "
                     + " Scope = ? "
                     + " and Name = ? "
-                    , item.getScope().name()
+                    , item.getScope() == null ? null : item.getScope().name()
                     , item.getName()
                     , item.getDescription()
                     , item.isDefaultRole()
                     , item.isSystem()
                     , item.getCreatedAt()
                     , item.getUpdatedAt()
-                    , item.getScope().name()
+                    , item.getScope() == null ? null : item.getScope().name()
                     , item.getName()
             );
             storePermissions(item, true);
             return findById(item.getScope(), item.getName()).get();
+        } catch (NoSuchElementException ex) {
+            logger.error("Failed to update api:", ex);
+            throw new IllegalStateException("Failed to update api", ex);
         } catch (Throwable ex) {
             logger.error("Failed to update role:", ex);
             throw new TechnicalException("Failed to update role", ex);
@@ -135,7 +139,10 @@ public class JdbcRoleRepository implements RoleRepository {
         logger.debug("JdbcRoleRepository.storePermissions({}, {})", role, deleteFirst);
         try {
             if (deleteFirst) {
-                jdbcTemplate.update("delete from RolePermission where RoleScope = ? and RoleName = ?", role.getScope().name(), role.getName());
+                jdbcTemplate.update("delete from RolePermission where RoleScope = ? and RoleName = ?"
+                        , role.getScope() == null ? null : role.getScope().name()
+                        , role.getName()
+                );
             }
             int permissions[] = role.getPermissions();
             if ((permissions != null) && permissions.length > 0) {
@@ -173,7 +180,8 @@ public class JdbcRoleRepository implements RoleRepository {
                     + " where r.Scope = ? and r.Name = ? "
                     + " order by r.Scope, r.Name"
                     , rowMapper
-                    , scope.name(), name
+                    , scope == null ? null : scope.name()
+                    , name
             );
             Optional<Role> result = rowMapper.getRows().stream().findFirst();
             logger.debug("JdbcRoleRepository.findById({}, {}) = {}", scope, name, result);

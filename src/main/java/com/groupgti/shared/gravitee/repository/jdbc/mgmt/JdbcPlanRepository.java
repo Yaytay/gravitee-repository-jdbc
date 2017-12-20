@@ -9,18 +9,21 @@ import com.groupgti.shared.gravitee.repository.jdbc.orm.JdbcObjectMapper;
 import io.gravitee.repository.exceptions.TechnicalException;
 import io.gravitee.repository.management.api.PlanRepository;
 import io.gravitee.repository.management.model.Plan;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.Set;
 import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -73,7 +76,13 @@ public class JdbcPlanRepository implements PlanRepository {
         List<String> characteristics = getCharacteristics(parent.getId());
         parent.setCharacteristics(characteristics);
     }
+
     
+    private void addExcludedGroups(Plan parent) {        
+        List<String> excludedGroups = getExcludedGroups(parent.getId());
+        parent.setExcludedGroups(excludedGroups);
+    }
+        
     
     @Autowired
     public JdbcPlanRepository(DataSource dataSource) {
@@ -94,6 +103,7 @@ public class JdbcPlanRepository implements PlanRepository {
             Optional<Plan> result = rowMapper.getRows().stream().findFirst();
             if (result.isPresent()) {
                 addCharacteristics(result.get());
+                addExcludedGroups(result.get());
             }
             return result;
         } catch (Throwable ex) {
@@ -110,6 +120,7 @@ public class JdbcPlanRepository implements PlanRepository {
             jdbcTemplate.update(ORM.buildInsertPreparedStatementCreator(item));
             storeApis(item, false);
             storeCharacteristics(item, false);
+            storeExcludedGroups(item, false);
             return findById(item.getId()).get();
         } catch (Throwable ex) {
             logger.error("Failed to create plan:", ex);
@@ -121,13 +132,17 @@ public class JdbcPlanRepository implements PlanRepository {
     public Plan update(Plan item) throws TechnicalException {
         logger.debug("JdbcPlanRepository.update({})", item);
         if (item == null) {
-            throw new NullPointerException();
+            throw new IllegalStateException();
         }
         try {
             jdbcTemplate.update(ORM.buildUpdatePreparedStatementCreator(item, item.getId()));
             storeApis(item, true);
             storeCharacteristics(item, true);
+            storeExcludedGroups(item, true);
             return findById(item.getId()).get();
+        } catch (NoSuchElementException ex) {
+            logger.error("Failed to update api:", ex);
+            throw new IllegalStateException("Failed to update api", ex);
         } catch (Throwable ex) {
             logger.error("Failed to update plan:", ex);
             throw new TechnicalException("Failed to update plan", ex);
@@ -140,6 +155,7 @@ public class JdbcPlanRepository implements PlanRepository {
         try {
             jdbcTemplate.update("delete from PlanApi where PlanId = ?", id);
             jdbcTemplate.update("delete from PlanCharacteristic where PlanId = ?", id);
+            jdbcTemplate.update("delete from PlanExcludedGroup where PlanId = ?", id);
             jdbcTemplate.update(ORM.getDeleteSql(), id);
         } catch (Throwable ex) {
             logger.error("Failed to delete plan:", ex);
@@ -155,6 +171,13 @@ public class JdbcPlanRepository implements PlanRepository {
     private List<String> getCharacteristics(String planId) {
         logger.debug("JdbcPlanRepository.getCharacteristics({})", planId);
         return jdbcTemplate.queryForList("select Characteristic from PlanCharacteristic where PlanId = ?", String.class, planId);
+    }
+        
+    private List<String> getExcludedGroups(String pageId) {
+        List<String> excludedGroups = jdbcTemplate.query("select ExcludedGroup from PlanExcludedGroup where PlanId = ?"
+                , (ResultSet rs, int rowNum) -> rs.getString(1)
+                , pageId);
+        return excludedGroups;
     }
     
     private void storeApis(Plan plan, boolean deleteFirst) throws TechnicalException {
@@ -190,6 +213,28 @@ public class JdbcPlanRepository implements PlanRepository {
             throw new TechnicalException("Failed to store characteristics", ex);
         }
     }
+    
+    private void storeExcludedGroups(Plan plan, boolean deleteFirst) {
+        if (deleteFirst) {
+            jdbcTemplate.update("delete from PlanExcludedGroup where PlanId = ?", plan.getId());
+        }
+        if ((plan.getExcludedGroups() != null) && !plan.getExcludedGroups().isEmpty()) {
+            List<String> excludedGroups = plan.getExcludedGroups();
+            jdbcTemplate.batchUpdate("insert into PlanExcludedGroup ( PlanId, ExcludedGroup ) values ( ?, ? )"
+                    , new BatchPreparedStatementSetter() {
+                @Override
+                public void setValues(PreparedStatement ps, int i) throws SQLException {
+                    ps.setString(1, plan.getId());
+                    ps.setString(2, excludedGroups.get(i));
+                }
+
+                @Override
+                public int getBatchSize() {
+                    return excludedGroups.size();
+                }
+            });
+        }
+    }    
 
     @Override
     public Set<Plan> findByApi(String apiId) throws TechnicalException {
@@ -207,12 +252,13 @@ public class JdbcPlanRepository implements PlanRepository {
             List<Plan> plans = rowMapper.getRows();
             for (Plan plan : plans) {
                 addCharacteristics(plan);
+                addExcludedGroups(plan);
                 addApis(plan);
             }
             return new HashSet<>(plans);
         } catch (Throwable ex) {
-            logger.error("Failed to find apis by visibility:", ex);
-            throw new TechnicalException("Failed to find apis by visibility", ex);
+            logger.error("Failed to find plans by api:", ex);
+            throw new TechnicalException("Failed to find plans by api", ex);
         }
     }
 }
