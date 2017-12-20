@@ -9,6 +9,7 @@ import com.groupgti.shared.gravitee.repository.jdbc.orm.JdbcObjectMapper;
 import io.gravitee.repository.management.api.ViewRepository;
 import io.gravitee.repository.management.model.View;
 import java.sql.Types;
+import java.util.Date;
 import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,8 +29,13 @@ public class JdbcViewRepository extends JdbcAbstractCrudRepository<View, String>
             .addColumn("Id", Types.NVARCHAR, String.class)
             .addColumn("Name", Types.NVARCHAR, String.class)
             .addColumn("Description", Types.NVARCHAR, String.class)
+            .addColumn("DefaultView", Types.BIT, boolean.class)
+            .addColumn("Hidden", Types.BIT, boolean.class)
+            .addColumn("Order", Types.INTEGER, int.class)
+            .addColumn("CreatedAt", Types.TIMESTAMP, Date.class)
+            .addColumn("UpdatedAt", Types.TIMESTAMP, Date.class)
             .build();    
-
+    
     
     public JdbcViewRepository(DataSource dataSource) {
         super(dataSource, View.class);

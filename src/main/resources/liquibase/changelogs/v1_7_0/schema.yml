@@ -61,3 +61,11 @@ databaseChangeLog:
                 - column: {name: PlanId, type: nvarchar(64), constraints: { nullable: false, primaryKey: true } }
                 - column: {name: ExcludedGroup, type: nvarchar(64), constraints: { nullable: false, primaryKey: true } }
     
+        - addColumn:
+            tableName: View
+            columns:
+                - column: {name: DefaultView, type: boolean, constraints: { nullable: true } }
+                - column: {name: Hidden, type: bit, constraints: { nullable: true } }
+                - column: {name: Order, type: int, constraints: { nullable: true } }
+                - column: {name: CreatedAt, type: datetime, constraints: { nullable: true } }
+                - column: {name: UpdatedAt, type: datetime, constraints: { nullable: true } }
