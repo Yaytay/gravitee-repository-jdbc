@@ -145,6 +145,7 @@ public class JdbcRoleRepository implements RoleRepository {
                 );
             }
             int permissions[] = role.getPermissions();
+            logger.info("Storing permissions for {}, {} : {}", role.getScope(), role.getName(), permissions);
             if ((permissions != null) && permissions.length > 0) {
                 jdbcTemplate.batchUpdate("insert into RolePermission ( RoleScope, RoleName, Permission ) values ( ?, ?, ? )"
                         , new BatchPreparedStatementSetter() {
