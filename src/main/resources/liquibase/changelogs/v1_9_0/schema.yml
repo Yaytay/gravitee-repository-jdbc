@@ -8,4 +8,4 @@ databaseChangeLog:
             - modifyDataType:
                 tableName: Audit
                 columnName: Patch
-                newDataType: nvarchar(4096)
+                newDataType: nclob

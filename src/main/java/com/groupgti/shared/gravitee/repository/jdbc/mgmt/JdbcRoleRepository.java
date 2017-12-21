@@ -135,6 +135,25 @@ public class JdbcRoleRepository implements RoleRepository {
         }
     }    
     
+    int[] dedupePermissions(int[] original) {
+        if (original == null) {
+            return null;
+        }
+        int[] permissions = Arrays.copyOf(original, original.length);
+        Arrays.sort(permissions);
+        int tgt = 0;
+        for (int src = 1; src < permissions.length; ++src) {
+            if (permissions[src] != permissions[tgt]) {
+                permissions[++tgt] = permissions[src];
+            }
+        }
+        if (tgt + 1 != original.length) {
+            permissions = Arrays.copyOf(permissions, tgt + 1);
+            logger.warn("Permissions changed from {} to {}", original, permissions);
+        }
+        return permissions;
+    }
+    
     private void storePermissions(Role role, boolean deleteFirst) throws TechnicalException {
         logger.debug("JdbcRoleRepository.storePermissions({}, {})", role, deleteFirst);
         try {
@@ -144,8 +163,9 @@ public class JdbcRoleRepository implements RoleRepository {
                         , role.getName()
                 );
             }
-            int permissions[] = role.getPermissions();
-            logger.info("Storing permissions for {}, {} : {}", role.getScope(), role.getName(), permissions);
+
+            logger.warn("Storing permissions for {}, {} : {}", role.getScope(), role.getName(), role.getPermissions());
+            int[] permissions = dedupePermissions(role.getPermissions());
             if ((permissions != null) && permissions.length > 0) {
                 jdbcTemplate.batchUpdate("insert into RolePermission ( RoleScope, RoleName, Permission ) values ( ?, ?, ? )"
                         , new BatchPreparedStatementSetter() {

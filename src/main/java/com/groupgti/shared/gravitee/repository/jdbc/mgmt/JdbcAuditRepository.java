@@ -140,7 +140,7 @@ public class JdbcAuditRepository implements AuditRepository {
     
     private Map<String, String> getProperties(String auditId) {
         Map<String, String> properties = new HashMap<>();
-        jdbcTemplate.query("select Key, Value from AuditProperty where AuditId = ?"
+        jdbcTemplate.query("select `Key`, `Value` from AuditProperty where AuditId = ?"
                 , (ResultSet rs) -> { properties.put(rs.getString(1), rs.getString(2)); }
                 , auditId
         );
@@ -153,7 +153,7 @@ public class JdbcAuditRepository implements AuditRepository {
         }
         if (! audit.getProperties().isEmpty()) {
             List<Map.Entry<String, String>> entries = new ArrayList<>(audit.getProperties().entrySet());
-            jdbcTemplate.batchUpdate("insert into AuditProperty ( AuditId, Key, Value ) values ( ?, ?, ? )"
+            jdbcTemplate.batchUpdate("insert into AuditProperty ( AuditId, `Key`, `Value` ) values ( ?, ?, ? )"
                     , new BatchPreparedStatementSetter() {
                 @Override
                 public void setValues(PreparedStatement ps, int i) throws SQLException {
