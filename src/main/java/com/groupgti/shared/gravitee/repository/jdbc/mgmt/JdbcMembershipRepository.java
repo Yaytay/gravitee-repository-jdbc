@@ -309,7 +309,7 @@ public class JdbcMembershipRepository implements MembershipRepository {
                 query.append(first ? " where " : " and ");
                 first = false;
                 query.append(" RoleName = ? ");                
-            }            
+            }
             List<Membership> items = jdbcTemplate.query(query.toString()
                     , (PreparedStatement ps) -> {
                         int idx = 1;
