@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -83,7 +84,6 @@ public class JdbcUserRepository implements UserRepository {
         
         try {
             jdbcTemplate.update(ORM.buildInsertPreparedStatementCreator(user));
-//            insertUserRoles(user);
             return findByUsername(user.getUsername()).get();
         } catch (Throwable ex) {
             logger.error("Failed to create user:", ex);
@@ -91,14 +91,6 @@ public class JdbcUserRepository implements UserRepository {
         }
 
     }
-
-//    protected void insertUserRoles(User user) throws DataAccessException {
-//        List<String> filteredRoles = ORM.filterStrings(user.getRoles());
-//        if (! filteredRoles.isEmpty()) {
-//            jdbcTemplate.batchUpdate("insert into UserRole ( Username, Role ) values ( ? , ? )"
-//                    , ORM.getBatchStringSetter(user.getUsername(), filteredRoles));
-//        }
-//    }
 
     @Override
     public User update(User user) throws TechnicalException {
@@ -109,8 +101,6 @@ public class JdbcUserRepository implements UserRepository {
         }
         try {
             jdbcTemplate.update(ORM.buildUpdatePreparedStatementCreator(user, user.getUsername()));
-            jdbcTemplate.update("delete from UserRole where Username = ?", user.getUsername());
-//            insertUserRoles(user);
             return findByUsername(user.getUsername()).get();
         } catch (NoSuchElementException ex) {
             logger.error("Failed to update api:", ex);
@@ -129,7 +119,7 @@ public class JdbcUserRepository implements UserRepository {
         logger.debug("JdbcUserRepository.findByUsername({})", username);
         try {
 //            CollatingRowMapper<User> rowMapper = new CollatingRowMapper<>(ORM.getRowMapper(), CHILD_ADDER, "Username");
-            List<User> users = jdbcTemplate.query("select * from User u left join UserRole ur on u.Username = ur.Username where u.Username = ?"
+            List<User> users = jdbcTemplate.query("select * from User u where u.Username = ?"
                     , ORM.getRowMapper()
                     , username
             );
@@ -145,16 +135,23 @@ public class JdbcUserRepository implements UserRepository {
     @Override
     public Set<User> findByUsernames(List<String> usernames) throws TechnicalException {
         
-        logger.debug("JdbcUserRepository.findByUsernames({})", usernames);
-
+        String lastUsername[] = new String[1];
+        List<String> uniqueUsernames = usernames.stream().filter(u -> {
+            if (u.equals(lastUsername[0])) {
+                return false;
+            } else {
+                lastUsername[0] = u;
+                return true;
+            }
+        }).collect(Collectors.toList());
+        
+        logger.debug("JdbcUserRepository.findByUsernames({})", uniqueUsernames);
         try {
-//            CollatingRowMapper<User> rowMapper = new CollatingRowMapper<>(ORM.getRowMapper(), CHILD_ADDER, "Username");
-            List<User> users = jdbcTemplate.query("select * from User u left join UserRole ur on u.Username = ur.Username where u.Username in ( " 
-                    + ORM.buildInClause(usernames) + " )"
-                    , (PreparedStatement ps) -> { ORM.setArguments(ps, usernames, 1); }
+            List<User> users = jdbcTemplate.query("select * from User u where u.Username in ( " 
+                    + ORM.buildInClause(uniqueUsernames) + " )"
+                    , (PreparedStatement ps) -> { ORM.setArguments(ps, uniqueUsernames, 1); }
                     , ORM.getRowMapper()
             );
-//            List<User> users = rowMapper.getRows();
             return new HashSet<>(users);
         } catch (Throwable ex) {
             logger.error("Failed to find user by usernames:", ex);
@@ -168,7 +165,7 @@ public class JdbcUserRepository implements UserRepository {
         logger.debug("JdbcUserRepository.findByEmail({})", email);
         try {
 //            CollatingRowMapper<User> rowMapper = new CollatingRowMapper<>(ORM.getRowMapper(), CHILD_ADDER, "Username");
-            List<User> users = jdbcTemplate.query("select * from User u left join UserRole ur on u.Username = ur.Username where u.Email = ?"
+            List<User> users = jdbcTemplate.query("select * from User u where u.Email = ?"
                     , ORM.getRowMapper()
                     , email
             );
@@ -187,7 +184,7 @@ public class JdbcUserRepository implements UserRepository {
         logger.debug("JdbcUserRepository.findAll()");
         try {
 //            CollatingRowMapper<User> rowMapper = new CollatingRowMapper<>(ORM.getRowMapper(), CHILD_ADDER, "Username");
-            List<User> users = jdbcTemplate.query("select * from User u left join UserRole ur on u.Username = ur.Username"
+            List<User> users = jdbcTemplate.query("select * from User u "
                     , ORM.getRowMapper()
             );
 //            List<User> users = rowMapper.getRows();
@@ -205,7 +202,6 @@ public class JdbcUserRepository implements UserRepository {
         try {
 //            CollatingRowMapper<User> rowMapper = new CollatingRowMapper<>(ORM.getRowMapper(), CHILD_ADDER, "Username");
             List<User> users = jdbcTemplate.query("select * from User u "
-                    + " left join UserRole ur on u.Username = ur.Username "
                     + " join TeamMember tm on u.Username = tm.Username "
                     + " where tm.TeamName = ? " 
                     , ORM.getRowMapper()

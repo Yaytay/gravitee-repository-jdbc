@@ -394,74 +394,6 @@ public class JdbcMembershipRepository implements MembershipRepository {
         
     }
 
-//    
-//    @Override
-//    public Set<Membership> findByReferenceAndMembershipType(MembershipReferenceType referenceType, String referenceId, String membershipType) throws TechnicalException {
-//
-//        logger.debug("JdbcMembershipRepository.findByReferenceAndMembershipType({}, {}, {})", referenceType, referenceId, membershipType);
-//        
-//        return findByReferencesAndMembershipType(referenceType, Arrays.asList(referenceId), membershipType);
-//        
-//    }
-//
-//    @Override
-//    public Set<Membership> findByReferencesAndMembershipType(MembershipReferenceType referenceType, List<String> referenceIds, String membershipType) throws TechnicalException {
-//
-//        logger.debug("JdbcMembershipRepository.findByReferencesAndMembershipType({}, {}, {})", referenceType, referenceIds, membershipType);
-//        
-//        try {
-//            StringBuilder query = new StringBuilder("select * from Membership ");
-//            boolean first = true;
-//            if (referenceType != null) {
-//                query.append(first ? " where " : " and ");
-//                first = false;
-//                query.append(" ReferenceType = ? ");                
-//            }
-//            if (membershipType != null) {
-//                query.append(first ? " where " : " and ");
-//                first = false;
-//                query.append(" Type = ? ");                
-//            }
-//            ORM.buildInCondition(first, query, "ReferenceId", referenceIds);
-//            
-//            List<Membership> items = jdbcTemplate.query(query.toString()
-//                    , (PreparedStatement ps) -> {
-//                        int idx = 1;
-//                        if (referenceType != null) {
-//                            ps.setString(idx++, referenceType.name());
-//                        }
-//                        if (membershipType != null) {
-//                            ps.setString(idx++, membershipType);
-//                        }
-//                        ORM.setArguments(ps, referenceIds, idx);
-//                    }, ORM.getRowMapper()
-//            );
-//            return new HashSet<>(items);
-//        } catch (Throwable ex) {
-//            logger.error("Failed to find membership by references and membership type:", ex);
-//            throw new TechnicalException("Failed to find membership by references and membership type", ex);
-//        }
-//        
-//    }
-//
-//    @Override
-//    public Set<Membership> findByUserAndReferenceTypeAndMembershipType(String userId, MembershipReferenceType referenceType, String membershipType) throws TechnicalException {
-//
-//        logger.debug("JdbcMembershipRepository.findByUserAndReferenceTypeAndMembershipType({}, {}, {})", userId, referenceType);
-//        
-//        try {
-//            List<Membership> items = jdbcTemplate.query("select * from Membership where UserId = ? and ReferenceType = ? and Type = ? "
-//                    , ORM.getRowMapper()
-//                    , userId, referenceType.name(), membershipType
-//            );
-//            return new HashSet<>(items);
-//        } catch (Throwable ex) {
-//            logger.error("Failed to find membership by user and reference type and membership type:", ex);
-//            throw new TechnicalException("Failed to find membership by user and reference type and membership type", ex);
-//        }
-//        
-//    }    
-
     @Override
     public Set<Membership> findByUserAndReferenceType(String userId, MembershipReferenceType referenceType) throws TechnicalException {
 
@@ -474,6 +406,9 @@ public class JdbcMembershipRepository implements MembershipRepository {
                     , ORM.getRowMapper()
                     , userId, referenceType.name()
             );
+            for (Membership membership : items) {
+                addRoles(membership);
+            }
             return new HashSet<>(items);
         } catch (Throwable ex) {
             logger.error("Failed to find membership by user and membership type:", ex);

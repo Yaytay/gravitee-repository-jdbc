@@ -240,6 +240,10 @@ public class JdbcApiRepository implements ApiRepository {
         
         logger.debug("JdbcApiRepository.findByIds({})", ids);
 
+        if ((ids == null) || ids.isEmpty()) {
+            return new HashSet<>();
+        }
+        
         try {
             JdbcHelper.CollatingRowMapper<Api> rowMapper = new JdbcHelper.CollatingRowMapper<>(ORM.getRowMapper(), CHILD_ADDER, "Id");
             jdbcTemplate.query("select * from Api a left join ApiView av on a.Id = av.ApiId where a.Id in ("
@@ -264,9 +268,16 @@ public class JdbcApiRepository implements ApiRepository {
         
         logger.debug("JdbcApiRepository.findByGroups({})", groupIds);
 
+        if ((groupIds == null) || groupIds.isEmpty()) {
+            return new HashSet<>();
+        }
+
         try {
             JdbcHelper.CollatingRowMapper<Api> rowMapper = new JdbcHelper.CollatingRowMapper<>(ORM.getRowMapper(), CHILD_ADDER, "Id");
-            jdbcTemplate.query("select * from Api a left join ApiView av on a.Id = av.ApiId where a.`Group` in ("
+            jdbcTemplate.query("select distinct a.*, av.* from Api a "
+                    + "join ApiGroup ag on a.Id = ag.ApiId "
+                    + "left join ApiView av on a.Id = av.ApiId "
+                    + "where ag.GroupId in ("
                     + ORM.buildInClause(groupIds) + " )"
                     , (PreparedStatement ps) -> { ORM.setArguments(ps, groupIds, 1); }
                     , rowMapper
